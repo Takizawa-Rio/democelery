@@ -3,64 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demo Celery - Thuyết Trình</title>
+    <title>Mô Phỏng Celery (Chế độ Thuyết Trình Chậm)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        body { background-color: #f8f9fa; font-family: Arial, sans-serif; }
-        .box-title { font-weight: bold; text-transform: uppercase; margin-bottom: 15px; }
-        .queue-box { min-height: 150px; background-color: #fff3cd; border: 2px dashed #ffc107; border-radius: 8px; padding: 10px; }
-        .worker-box { transition: 0.3s; border-left: 5px solid #6c757d; }
-        .worker-busy { border-left: 5px solid #0d6efd; background-color: #e9f2ff; }
-        .log-box { height: 200px; overflow-y: auto; background-color: #212529; color: #32cd32; font-family: monospace; padding: 15px; border-radius: 8px; font-size: 14px; }
-        .task-item { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Hiệu ứng nhấp nháy cho Broker */
+        .broker-scanning {
+            box-shadow: 0 0 15px rgba(253, 126, 20, 0.6);
+            border-color: #fd7e14 !important;
+            transition: 0.5s;
+        }
+
+        .queue-container {
+            min-height: 180px; background-color: #fff8e1;
+            border: 2px dashed #ffc107; border-radius: 8px; padding: 15px;
+        }
+
+        /* Thanh tiến trình chạy từ từ */
+        .progress { height: 25px; font-size: 14px; font-weight: bold; background-color: #e9ecef; }
+        .progress-bar { transition: width linear; } /* Animation tuyến tính mượt mà */
+
+        .worker-card { transition: 0.3s; border-left: 5px solid #6c757d; }
+        .worker-working { border-left: 5px solid #0d6efd; background-color: #e9f2ff; transform: scale(1.02); }
+
+        .log-box { 
+            height: 250px; overflow-y: auto; background-color: #1e1e1e; 
+            color: #4af626; font-family: 'Consolas', monospace; padding: 15px; 
+            border-radius: 8px; font-size: 15px; box-shadow: inset 0 0 10px #000;
+        }
+        .log-time { color: #888; margin-right: 10px; }
     </style>
 </head>
 <body class="py-4">
 
 <div class="container">
-    <h2 class="text-center text-primary mb-4 fw-bold">MÔ PHỎNG LUỒNG HOẠT ĐỘNG CELERY</h2>
+    <div class="text-center mb-4">
+        <h2 class="fw-bold text-dark text-uppercase"><i class="fa-solid fa-chalkboard-user text-primary"></i> Mô Phỏng Phân Tán Celery (Tốc độ chậm)</h2>
+        <p class="text-muted">Nhịp điều phối: 2 giây/lần | Nhịp xử lý: 5-7 giây/tác vụ</p>
+    </div>
 
     <div class="row g-4 mb-4">
         <div class="col-md-4">
-            <div class="card h-100 shadow-sm border-success">
-                <div class="card-body text-center">
-                    <h5 class="box-title text-success">1. Producer (Ứng dụng)</h5>
-                    <p class="text-muted small">Nơi phát sinh các tác vụ nặng</p>
-                    <button class="btn btn-success btn-lg mt-3" onclick="taoTacVuMoi()">
-                        <i class="fa-solid fa-plus"></i> Tạo Tác Vụ Mới
+            <div class="card h-100 shadow-sm" style="border-top: 5px solid #198754;">
+                <div class="card-body text-center d-flex flex-column justify-content-center">
+                    <h5 class="text-success fw-bold mb-3"><i class="fa-solid fa-laptop-code"></i> 1. PRODUCER</h5>
+                    <p class="text-muted small mb-4">Ứng dụng phát sinh công việc</p>
+                    
+                    <button class="btn btn-success btn-lg mb-3 shadow" onclick="taoTacVu()">
+                        <i class="fa-solid fa-file-export me-2"></i>Tạo Tác Vụ Mới
                     </button>
+                    <p class="mb-0 text-secondary">Đã gửi: <strong id="tongDaGui" class="fs-5 text-dark">0</strong> yêu cầu</p>
                 </div>
             </div>
         </div>
 
         <div class="col-md-4">
-            <div class="card h-100 shadow-sm border-warning">
+            <div class="card h-100 shadow-sm" id="brokerCard" style="border-top: 5px solid #fd7e14;">
                 <div class="card-body">
-                    <h5 class="box-title text-warning text-center">2. Message Broker</h5>
-                    <p class="text-muted small text-center">Hàng đợi chờ xử lý (Redis/RabbitMQ)</p>
-                    <div class="queue-box d-flex flex-column gap-2" id="hangDoiUI">
+                    <h5 class="text-warning fw-bold text-center mb-2" style="color: #fd7e14 !important;"><i class="fa-solid fa-server"></i> 2. MESSAGE BROKER</h5>
+                    <div class="text-center mb-3">
+                        <span id="brokerStatus" class="badge bg-secondary">Đang ngủ...</span>
+                    </div>
+                    
+                    <div class="queue-container d-flex flex-column gap-2" id="hangDoiUI">
+                        <div class="text-center text-muted mt-4">Hàng đợi đang trống</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm" style="border-top: 5px solid #0d6efd;">
+                <div class="card-body">
+                    <h5 class="text-primary fw-bold text-center mb-4"><i class="fa-solid fa-microchip"></i> 3. CONSUMERS (WORKERS)</h5>
+
+                    <div class="card worker-card mb-3 p-2" id="card-w1">
+                        <div class="d-flex justify-content-between mb-2">
+                            <strong class="text-dark"><i class="fa-solid fa-robot text-secondary"></i> Worker 1</strong>
+                            <span id="status-w1" class="text-muted small fw-bold">Đang rảnh</span>
                         </div>
-                </div>
-            </div>
-        </div>
+                        <div class="progress">
+                            <div id="progress-w1" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%; transition-duration: 0s;">0%</div>
+                        </div>
+                    </div>
 
-        <div class="col-md-4">
-            <div class="card h-100 shadow-sm border-primary">
-                <div class="card-body">
-                    <h5 class="box-title text-primary text-center">3. Consumers (Workers)</h5>
-                    <p class="text-muted small text-center">Các tiến trình chạy ngầm</p>
-                    
-                    <div class="card worker-box mb-2 p-2" id="ui-worker-1">
-                        <strong><i class="fa-solid fa-robot"></i> Worker 1</strong>
-                        <span id="trangThai-worker-1" class="text-muted">Đang rảnh...</span>
+                    <div class="card worker-card p-2" id="card-w2">
+                        <div class="d-flex justify-content-between mb-2">
+                            <strong class="text-dark"><i class="fa-solid fa-robot text-secondary"></i> Worker 2</strong>
+                            <span id="status-w2" class="text-muted small fw-bold">Đang rảnh</span>
+                        </div>
+                        <div class="progress">
+                            <div id="progress-w2" class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" style="width: 0%; transition-duration: 0s;">0%</div>
+                        </div>
                     </div>
-                    
-                    <div class="card worker-box p-2" id="ui-worker-2">
-                        <strong><i class="fa-solid fa-robot"></i> Worker 2</strong>
-                        <span id="trangThai-worker-2" class="text-muted">Đang rảnh...</span>
-                    </div>
+
                 </div>
             </div>
         </div>
@@ -68,116 +107,133 @@
 
     <div class="row">
         <div class="col-12">
-            <h5 class="fw-bold"><i class="fa-solid fa-terminal"></i> Nhật ký hệ thống (Live Log)</h5>
-            <div class="log-box shadow-sm" id="nhatKyHeThong">
-                <div>> Hệ thống Celery đã khởi động...</div>
-                <div>> Message Broker đang chờ nhận việc...</div>
+            <h5 class="fw-bold"><i class="fa-solid fa-terminal text-secondary"></i> Console Log (Nhật ký giám sát hệ thống)</h5>
+            <div class="log-box shadow" id="bangNhatKy">
+                <div><span class="log-time">[System]</span> Khởi động mô phỏng Celery. Tốc độ: Chậm (Dành cho thuyết trình).</div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // ==========================================
-    // PHẦN 1: KHAI BÁO BIẾN HỆ THỐNG
-    // ==========================================
-    let hangDoiBroker = []; // Mảng chứa các tác vụ
-    let soThuTuTacVu = 0;
+    let hangDoi = [];
+    let demTacVu = 0;
 
-    // Khởi tạo 2 Worker với tốc độ xử lý khác nhau
-    let danhSachWorkers = [
-        { id: 1, dangBan: false, thoiGianXuLy: 3000 }, // Worker 1 cần 3 giây để làm xong
-        { id: 2, dangBan: false, thoiGianXuLy: 5000 }  // Worker 2 cần 5 giây để làm xong
+    // Cấu hình Worker: Chạy rất chậm để dễ quan sát (5 giây và 7 giây)
+    let dsWorkers = [
+        { id: 1, dangBan: false, thoiGianXyLy: 5000, mauSac: 'primary' },
+        { id: 2, dangBan: false, thoiGianXyLy: 7000, mauSac: 'info' }
     ];
 
-    // ==========================================
-    // PHẦN 2: LOGIC CỦA PRODUCER (Người giao việc)
-    // ==========================================
-    function taoTacVuMoi() {
-        soThuTuTacVu++;
-        let tenTacVu = "Tác vụ #" + soThuTuTacVu;
+    // 1. PRODUCER GỬI VIỆC
+    function taoTacVu() {
+        demTacVu++;
+        let tenTask = "Tác vụ #" + demTacVu;
+        hangDoi.push(tenTask);
         
-        // Push tác vụ vào mảng hàng đợi
-        hangDoiBroker.push(tenTacVu);
-        
-        ghiLog(`[PRODUCER] Đã tạo và gửi [${tenTacVu}] vào Message Broker.`);
+        document.getElementById("tongDaGui").innerText = demTacVu;
+        ghiLog(`[PRODUCER] Đã tạo và đẩy [${tenTask}] vào hàng đợi.`);
         capNhatGiaoDienHangDoi();
     }
 
-    // ==========================================
-    // PHẦN 3: LOGIC CỦA MESSAGE BROKER (Điều phối)
-    // Broker sẽ liên tục kiểm tra hàng đợi mỗi 0.5 giây
-    // ==========================================
-    setInterval(function brokerDieuPhoi() {
-        // Nếu có việc trong hàng đợi
-        if (hangDoiBroker.length > 0) {
-            
-            // Tìm xem có Worker nào đang rảnh không?
-            let workerRanh = danhSachWorkers.find(w => w.dangBan === false);
-            
-            if (workerRanh) {
-                // Lấy công việc đầu tiên ra khỏi hàng đợi (FIFO)
-                let tacVuCanLam = hangDoiBroker.shift();
-                capNhatGiaoDienHangDoi();
-                
-                ghiLog(`[BROKER] Đã phát hiện Worker ${workerRanh.id} đang rảnh. Bắt đầu giao [${tacVuCanLam}]...`);
-                
-                // Chuyển việc cho Worker xử lý
-                workerBatDauLamViec(workerRanh, tacVuCanLam);
-            }
-        }
-    }, 500);
-
-    // ==========================================
-    // PHẦN 4: LOGIC CỦA CONSUMER (Worker xử lý)
-    // ==========================================
-    function workerBatDauLamViec(worker, tacVu) {
-        // 1. Đánh dấu Worker này đang bận
-        worker.dangBan = true;
-        
-        // Cập nhật giao diện
-        let khungWorker = document.getElementById(`ui-worker-${worker.id}`);
-        let chuTrangThai = document.getElementById(`trangThai-worker-${worker.id}`);
-        khungWorker.classList.add("worker-busy");
-        chuTrangThai.innerHTML = `<span class="spinner-border spinner-border-sm text-primary"></span> Đang xử lý ${tacVu}...`;
-        
-        ghiLog(`[WORKER ${worker.id}] Đã nhận [${tacVu}] và đang xử lý...`);
-
-        // 2. Giả lập thời gian làm việc (dùng setTimeout)
-        setTimeout(() => {
-            // Làm xong việc -> Gửi tín hiệu ACK
-            ghiLog(`[WORKER ${worker.id}] Hoàn thành [${tacVu}]! Đã gửi tín hiệu ACK về Broker.`);
-            
-            // Trả Worker về trạng thái rảnh để nhận việc mới
-            worker.dangBan = false;
-            khungWorker.classList.remove("worker-busy");
-            chuTrangThai.innerHTML = "Đang rảnh...";
-            
-        }, worker.thoiGianXuLy);
-    }
-
-    // ==========================================
-    // CÁC HÀM HỖ TRỢ GIAO DIỆN (UI)
-    // ==========================================
+    // Cập nhật UI hàng đợi
     function capNhatGiaoDienHangDoi() {
-        let khungHangDoi = document.getElementById("hangDoiUI");
-        khungHangDoi.innerHTML = "";
-        
-        if (hangDoiBroker.length === 0) {
-            khungHangDoi.innerHTML = `<div class="text-center text-muted mt-4">Hàng đợi đang trống</div>`;
+        let box = document.getElementById("hangDoiUI");
+        if (hangDoi.length === 0) {
+            box.innerHTML = `<div class="text-center text-muted mt-4">Hàng đợi đang trống</div>`;
         } else {
-            hangDoiBroker.forEach(tacVu => {
-                khungHangDoi.innerHTML += `<div class="task-item badge bg-warning text-dark p-2 text-start fs-6 border border-dark"><i class="fa-regular fa-envelope"></i> ${tacVu}</div>`;
+            box.innerHTML = "";
+            hangDoi.forEach(task => {
+                box.innerHTML += `<div class="badge bg-warning text-dark p-2 text-start fs-6 border border-warning-subtle shadow-sm"><i class="fa-solid fa-envelope me-2"></i>${task}</div>`;
             });
         }
     }
 
+    // 2. BROKER QUÉT HÀNG ĐỢI (Chạy mỗi 2 giây)
+    setInterval(() => {
+        let brokerStatus = document.getElementById("brokerStatus");
+        let brokerCard = document.getElementById("brokerCard");
+        
+        // Hiệu ứng Broker thức dậy quét
+        brokerStatus.className = "badge bg-warning text-dark";
+        brokerStatus.innerText = "Đang quét...";
+        brokerCard.classList.add("broker-scanning");
+
+        setTimeout(() => {
+            // Tắt hiệu ứng sau 0.5s
+            brokerStatus.className = "badge bg-secondary";
+            brokerStatus.innerText = "Đang ngủ...";
+            brokerCard.classList.remove("broker-scanning");
+
+            // Xử lý logic nếu có việc
+            if (hangDoi.length > 0) {
+                let thoiRanh = dsWorkers.find(w => w.dangBan === false);
+                
+                if (thoiRanh) {
+                    let taskLayRa = hangDoi.shift(); // Lấy FIFO
+                    capNhatGiaoDienHangDoi();
+                    ghiLog(`[BROKER] Đã rút [${taskLayRa}] khỏi hàng đợi -> Giao cho Worker ${thoiRanh.id}.`);
+                    
+                    giaoViecChoWorker(thoiRanh, taskLayRa);
+                } else {
+                    ghiLog(`[BROKER] Cảnh báo: Hàng đợi có việc nhưng TẤT CẢ Worker đều đang bận!`);
+                }
+            }
+        }, 500);
+
+    }, 2000); // Khoảng cách 2 giây cho mỗi lần điều phối
+
+    // 3. WORKER XỬ LÝ (Có thanh tiến trình chạy chậm)
+    function giaoViecChoWorker(worker, taskName) {
+        worker.dangBan = true;
+        
+        // Cập nhật UI
+        document.getElementById(`card-w${worker.id}`).classList.add("worker-working");
+        document.getElementById(`status-w${worker.id}`).innerText = "Đang xử lý...";
+        document.getElementById(`status-w${worker.id}`).className = "text-primary fw-bold";
+        
+        let thanhTienTrinh = document.getElementById(`progress-w${worker.id}`);
+        
+        // Cài đặt animation CSS cho thanh tiến trình chạy từ 0 đến 100% bằng đúng thoiGianXyLy
+        thanhTienTrinh.style.transitionDuration = (worker.thoiGianXyLy / 1000) + "s";
+        thanhTienTrinh.style.width = "100%";
+        thanhTienTrinh.innerText = "Đang chạy " + taskName;
+        
+        ghiLog(`[WORKER ${worker.id}] Bắt đầu chạy tính toán cho [${taskName}]...`);
+
+        // Sau khi chạy xong
+        setTimeout(() => {
+            ghiLog(`[WORKER ${worker.id}] Đã hoàn thành [${taskName}] -> Gửi tín hiệu ACK về Broker!`);
+            
+            // Trả lại trạng thái rảnh
+            worker.dangBan = false;
+            document.getElementById(`card-w${worker.id}`).classList.remove("worker-working");
+            document.getElementById(`status-w${worker.id}`).innerText = "Đang rảnh";
+            document.getElementById(`status-w${worker.id}`).className = "text-muted small fw-bold";
+            
+            // Reset thanh tiến trình lập tức (0s)
+            thanhTienTrinh.style.transitionDuration = "0s";
+            thanhTienTrinh.style.width = "0%";
+            thanhTienTrinh.innerText = "0%";
+            
+        }, worker.thoiGianXyLy);
+    }
+
+    // HÀM GHI LOG
     function ghiLog(noidung) {
-        let khungLog = document.getElementById("nhatKyHeThong");
+        let box = document.getElementById("bangNhatKy");
         let thoiGian = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-        khungLog.innerHTML += `<div><span class="text-secondary">[${thoiGian}]</span> ${noidung}</div>`;
-        // Tự động cuộn xuống dòng mới nhất
-        khungLog.scrollTop = khungLog.scrollHeight;
+        
+        // Tạo màu sắc tự động cho chữ
+        let mau = "#fff";
+        if(noidung.includes("PRODUCER")) mau = "#4af626"; // Xanh lá
+        if(noidung.includes("BROKER")) mau = "#ffb86c"; // Cam
+        if(noidung.includes("WORKER")) mau = "#8be9fd"; // Xanh dương nhạt
+        if(noidung.includes("ACK")) mau = "#ff79c6"; // Hồng nổi bật
+        if(noidung.includes("Cảnh báo")) mau = "#ff5555"; // Đỏ lỗi
+
+        box.innerHTML += `<div style="color: ${mau}; margin-bottom: 5px;"><span class="log-time">[${thoiGian}]</span> ${noidung}</div>`;
+        box.scrollTop = box.scrollHeight; // Tự động cuộn xuống dưới
     }
 </script>
 
