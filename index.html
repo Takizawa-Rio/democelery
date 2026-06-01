@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mô Phỏng Celery & Message Broker</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            background-color: #f4f6f9;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        /* Cột Message Broker */
+        .queue-container {
+            min-height: 300px;
+            background-color: #fff8e1;
+            border: 2px dashed #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .task-item {
+            animation: slideIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+
+        @keyframes slideIn {
+            0% { transform: translateY(-20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Thẻ Worker */
+        .worker-card {
+            transition: all 0.3s ease;
+            border-left: 5px solid #6c757d;
+        }
+
+        .worker-working {
+            border-left: 5px solid #0d6efd;
+            background-color: #e9f2ff;
+            box-shadow: 0 4px 15px rgba(13, 110, 253, 0.2);
+            transform: scale(1.02);
+        }
+
+        .btn-publish {
+            transition: transform 0.2s;
+        }
+        .btn-publish:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center min-vh-100 py-5">
+
+<div class="container">
+    <div class="text-center mb-5">
+        <h1 class="fw-bold text-dark"><i class="fa-solid fa-network-wired text-primary"></i> Hệ Thống Tính Toán Phân Tán</h1>
+        <p class="text-muted fs-5">Mô phỏng kiến trúc Celery (Producer - Broker - Consumer)</p>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm" style="border-top: 5px solid #198754 !important;">
+                <div class="card-body text-center d-flex flex-column justify-content-center">
+                    <h4 class="card-title text-success fw-bold mb-3">1. PRODUCER</h4>
+                    <p class="text-muted mb-4">Giao diện Web / Ứng dụng gốc</p>
+                    
+                    <button class="btn btn-success btn-lg mb-4 btn-publish shadow" onclick="taoTacVu()">
+                        <i class="fa-solid fa-paper-plane me-2"></i>TẠO TÁC VỤ
+                    </button>
+                    
+                    <div class="alert alert-success bg-opacity-10 mb-0">
+                        <i class="fa-solid fa-chart-line me-2"></i>Tổng số yêu cầu đã gửi: 
+                        <strong id="totalTasks" class="fs-5">0</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm" style="border-top: 5px solid #fd7e14 !important;">
+                <div class="card-body">
+                    <h4 class="card-title text-warning fw-bold text-center mb-3" style="color: #fd7e14 !important;">2. MESSAGE BROKER</h4>
+                    <p class="text-muted text-center mb-3"><i class="fa-solid fa-server me-2"></i>Hàng đợi Redis / RabbitMQ</p>
+                    
+                    <div class="queue-container shadow-inner" id="queueContainer">
+                        </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm" style="border-top: 5px solid #0d6efd !important;">
+                <div class="card-body">
+                    <h4 class="card-title text-primary fw-bold text-center mb-3">3. CONSUMERS</h4>
+                    <p class="text-muted text-center mb-4"><i class="fa-solid fa-microchip me-2"></i>Các Worker xử lý ngầm</p>
+
+                    <div class="card worker-card mb-3" id="worker1Card">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1 fw-bold">Worker 1</h6>
+                                    <small id="w1Status" class="text-muted">Đang rảnh (Idle)</small>
+                                </div>
+                                <div id="w1Spinner" class="spinner-border text-primary spinner-border-sm d-none" role="status"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card worker-card" id="worker2Card">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1 fw-bold">Worker 2</h6>
+                                    <small id="w2Status" class="text-muted">Đang rảnh (Idle)</small>
+                                </div>
+                                <div id="w2Spinner" class="spinner-border text-primary spinner-border-sm d-none" role="status"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    let queue = [];
+    let taskCounter = 0;
+    let totalSent = 0;
+
+    // Định nghĩa danh sách các Worker
+    const workers = [
+        { id: 1, isWorking: false, timeToProcess: 3000 }, // Xử lý trong 3s
+        { id: 2, isWorking: false, timeToProcess: 4000 }  // Xử lý trong 4s
+    ];
+
+    // Sự kiện nút Tạo Tác Vụ
+    function taoTacVu() {
+        taskCounter++;
+        totalSent++;
+        
+        const taskName = "Tác vụ #" + taskCounter;
+        queue.push(taskName);
+        
+        document.getElementById('totalTasks').innerText = totalSent;
+        capNhatGiaoDienQueue();
+    }
+
+    // Render danh sách công việc trong Broker
+    function capNhatGiaoDienQueue() {
+        const qContainer = document.getElementById('queueContainer');
+        qContainer.innerHTML = '';
+        
+        if(queue.length === 0) {
+            qContainer.innerHTML = '<div class="text-center text-muted mt-4"><i class="fa-regular fa-folder-open fs-1 mb-2"></i><br>Hàng đợi trống</div>';
+        } else {
+            queue.forEach(task => {
+                const el = document.createElement('div');
+                el.className = 'task-item badge bg-warning text-dark py-2 px-3 text-start fs-6 border border-warning-subtle shadow-sm';
+                el.innerHTML = '<i class="fa-solid fa-envelope-open-text me-2"></i>' + task;
+                qContainer.appendChild(el);
+            });
+        }
+    }
+
+    // Logic cốt lõi: Broker liên tục quét và phân phối việc (mỗi 500ms)
+    setInterval(() => {
+        if (queue.length > 0) {
+            // Tìm Worker đầu tiên đang rảnh
+            const availableWorker = workers.find(w => !w.isWorking);
+            
+            if (availableWorker) {
+                // Rút tác vụ khỏi hàng đợi
+                const task = queue.shift();
+                capNhatGiaoDienQueue();
+
+                // Đổi trạng thái Worker thành Đang làm việc
+                availableWorker.isWorking = true;
+                
+                const cardEl = document.getElementById(`worker${availableWorker.id}Card`);
+                const statusEl = document.getElementById(`w${availableWorker.id}Status`);
+                const spinnerEl = document.getElementById(`w${availableWorker.id}Spinner`);
+
+                // Cập nhật UI Worker
+                cardEl.classList.add('worker-working');
+                statusEl.innerText = `Đang xử lý ${task}...`;
+                statusEl.className = 'text-primary fw-bold';
+                spinnerEl.classList.remove('d-none');
+
+                // Giả lập thời gian Worker làm việc, sau đó báo hoàn thành (ACK)
+                setTimeout(() => {
+                    availableWorker.isWorking = false;
+                    
+                    // Reset UI Worker
+                    cardEl.classList.remove('worker-working');
+                    statusEl.innerText = 'Đã gửi ACK. Sẵn sàng!';
+                    statusEl.className = 'text-success';
+                    spinnerEl.classList.add('d-none');
+                    
+                    // Sau 1.5s thì chuyển về chữ "Đang rảnh" cho đẹp
+                    setTimeout(() => {
+                        if(!availableWorker.isWorking) {
+                            statusEl.innerText = 'Đang rảnh (Idle)';
+                            statusEl.className = 'text-muted';
+                        }
+                    }, 1500);
+
+                }, availableWorker.timeToProcess);
+            }
+        }
+    }, 500);
+
+    // Khởi tạo giao diện lần đầu
+    capNhatGiaoDienQueue();
+</script>
+
+</body>
+</html>
